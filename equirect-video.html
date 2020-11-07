@@ -29,7 +29,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
   <link rel='icon' type='image/png' sizes='32x32' href='favicon-32x32.png'>
   <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
   <link rel='stylesheet' href='css/common.css'>
-  <title>Barebones Video</title>
+  <title>Equirect Video</title>
   <script src="js/wglu/wglu-program.js"></script>
   <script src="js/stereo-util.js"></script>
 
@@ -38,32 +38,26 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 <body>
   <header>
     <details open>
-      <summary>Barebones Video</summary>
+      <summary>Equirect Video</summary>
       <p>
         This sample shows a stereo video on an equirect layer with a cubemap background.
         <a class="back" href="./">Back</a>
       </p>
       <label>Choose a video</label>
       <select id="videoselect">
-        <option value="https://d25a56pc18k0co.cloudfront.net/sloths_binaural_3840_180_3D-injected.mp4">side-by-side 180
-          3840x1920 30fps</option>
-        <option value="https://d25a56pc18k0co.cloudfront.net/sloths_binaural_3840x2160_360_3D_v2_injected.mp4">3840x2160 360
-          30fps
+        <option value="https://d25a56pc18k0co.cloudfront.net/sloths_binaural_3840_180_3D-injected.mp4"
+          data-video-width=3840 data-video-height=1920>side-by-side 180 3840x1920 30fps
         </option>
-      </select>
-      <input type="checkbox" id="update_every_frame">Update every frm</input>
-      <br />
-      <input type="checkbox" id="backdrop" checked>Show backdrop layer</input>
-      <input type="number" id="radius_txt" value="0">Radius</input>
-      <br />
-      <input type="checkbox" id="lower_fps">60 fps</input>
-      <br />
-      <button id="xr-button" disabled>XR not found</button>
-      <p>Trigger = pause<br/>
-      Squeeze = show/hide controllers<br/>
-      A/X = forward 15 second<br/>
-      B/Y = back 15 second<br/>
-      Joystick = turn movie</p>
+        <option value="https://d25a56pc18k0co.cloudfront.net/sloths_binaural_3840x2160_360_3D_v2_injected.mp4"
+          data-video-width=3840 data-video-height=2160>3840x2160 360 30fps
+        </option>
+      </select><br />
+      <label>Equirect layer radius</label>
+      <input type="number" id="radius_txt" value="10" /><br />
+      <input type="checkbox" id="update_every_frame">Update every frame</input><br />
+      <input type="checkbox" id="backdrop" checked>Show backdrop layer</input><br />
+      <input type="checkbox" id="lower_fps">60 fps</input><br />
+      <p>Trigger to select<br />Squeeze to grab<br /></p>
     </details>
   </header>
   <main style='text-align: center;'>
@@ -74,6 +68,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     import { Scene, WebXRView } from './js/render/scenes/scene.js';
     import { Renderer, createWebGLContext } from './js/render/core/renderer.js';
     import { Node } from './js/render/core/node.js';
+    import { UrlTexture } from './js/render/core/texture.js';
+    import { ButtonNode } from './js/render/nodes/button.js';
+    import { MenuSystem } from './menu-system.js';
     import { Gltf2Node } from './js/render/nodes/gltf2.js';
     import { SkyboxNode } from './js/render/nodes/skybox.js';
     import { BoxBuilder } from './js/render/geometry/box-builder.js';
@@ -147,7 +144,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     let backdrop = document.getElementById('backdrop');
     let low_fps = document.getElementById('lower_fps');
     // XR globals.
-    let xrButton = document.getElementById('xr-button');
+    let xrButton = null;
     let xrSession = null;
     let xrRefSpace = null;
     let xrGLFactory = null;
@@ -189,17 +186,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     function videoSelect() {
       let s = document.getElementById("videoselect");
       video.src = s.options[s.selectedIndex].value;
-      // HACK
-      switch (s.selectedIndex) {
-        case 0: videoWidth = 3840; videoHeight = 1920; break;
-        case 1: videoWidth = 3840; videoHeight = 2160; break;
-        case 2: videoWidth = 3840; videoHeight = 2160; break;
-        case 3: videoWidth = 2160; videoHeight = 2160; break;
-        case 4: videoWidth = 2880; videoHeight = 2880; break;
-        case 5: videoWidth = 1920; videoHeight = 1920; break;
-        case 6: videoWidth = 3840; videoHeight = 3840; break;
-        case 7: videoWidth = 3840; videoHeight = 3840; break;
-      }
+      videoWidth = s.options[s.selectedIndex].getAttribute("data-video-width");
+      videoHeight = s.options[s.selectedIndex].getAttribute("data-video-height");
     }
 
     videoSelect();
@@ -219,63 +207,72 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       }
     }, 1000 / 60);
 
+    let buttons = [];
+
+    function createButton(path, translation, action) {
+      let button = new ButtonNode(new UrlTexture(path), () => { });
+      button.translation = translation;
+      button.rotation = [-0.3826834, 0, 0, 0.9238795];
+      buttons.push({ node: button, action: action });
+      scene.addNode(button);
+    }
+
+    createButton('./media/textures/play-button.png', [0.06, -0.5, -0.3], () => video.play());
+    createButton('./media/textures/pause-button.png', [-0.06, -0.5, -0.3], () => video.pause());
+    createButton('./media/textures/forward-button.png', [0.18, -0.5, -0.3], () => { video.currentTime += 15; });
+    createButton('./media/textures/backward-button.png', [-0.18, -0.5, -0.3], () => { video.currentTime -= 15; });
+    createButton('./media/textures/x-button.png', [0.3, -0.5, -0.3], () => { xrSession.end() });
+
     // Checks to see if WebXR is available and, if so, requests an XRDevice
     // that is connected to the system and tests it to ensure it supports the
     // desired session options.
     function initXR() {
-      // Is WebXR available on this UA?
+      if (!xrButton) {
+        xrButton = new WebXRButton({
+          onRequestSession: onRequestSession,
+          onEndSession: onEndSession
+        });
+        document.querySelector('header').appendChild(xrButton.domElement);
+      }
+
       if (navigator.xr) {
         // If the device allows creation of exclusive sessions set it as the
         // target of the 'Enter XR' button.
         navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-          if (supported) {
-            // Updates the button to start an XR session when clicked.
-            xrButton.addEventListener('click', onButtonClicked);
-            xrButton.textContent = 'Enter XR';
-            xrButton.disabled = false;
-          }
+          xrButton.enabled = supported;
         });
       }
     }
 
     // Called when the user clicks the button to enter XR. If we don't have a
     // session we'll request one, and if we do have a session we'll end it.
-    function onButtonClicked() {
+    function onRequestSession() {
       if (!xrSession) {
-        navigator.xr.requestSession('immersive-vr', { requiredFeatures: ['layers'], optionalFeatures: [low_fps.checked ? 'low-refresh-rate' : ''] }).then(onSessionStarted);
+        navigator.xr.requestSession('immersive-vr', {
+          requiredFeatures: ['layers'],
+          optionalFeatures: [low_fps.checked ? 'low-refresh-rate' : '']
+        }).then(onSessionStarted);
         video.play();
       } else {
-        xrSession.end();
+        onEndSession();
       }
     }
 
-    function updateEqrTransform() {
-      const orient = quat.create();
-      quat.fromEuler(orient, eqr_orient.pitch, eqr_orient.yaw, eqr_orient.roll);
-      equirectlayer.transform = new XRRigidTransform(eqr_pos, { x: orient[0], y: orient[1], z: orient[2], w: orient[3] });
+    function moveEqr(position, orientation) {
+      equirectlayer.transform = new XRRigidTransform(
+        { x: position.x, y: position.y, z: position.z },
+        { x: orientation.x, y: orientation.y, z: orientation.z, w: orientation.w }
+      );
     }
-    function ProcessGamepad(gamepad, hand, pose, session) {
+
+    function ProcessGamepad(source, frame, session) {
+      let gamepad = source.gamepad;
+      let gripSpace = source.gripSpace;
+      let targetRaySpace = source.targetRaySpace;
+      let hand = source.handedness;
+      let pose = frame.getPose(source.gripSpace, xrRefSpace);
+
       if (equirectlayer != null) {
-        if ("axes" in gamepad && gamepad.axes.length >= 4) {
-          if (hand == "right") {
-            const tilt = gamepad.axes[3];
-            const rot = gamepad.axes[2];
-
-            // tilt
-            eqr_orient.pitch = tilt * 90;
-            eqr_orient.yaw = rot * 90;
-            updateEqrTransform();
-          } else if (hand == "left") {
-            const zoom = gamepad.axes[3];
-            const horizontal_shift = gamepad.axes[2];
-
-            // tilt
-            eqr_pos.x = horizontal_shift * 4;
-            eqr_pos.z = zoom * 3;
-            updateEqrTransform();
-          }
-        }
-
         let lastFrameButtons = lastFrameButtonsByGamepad.get(gamepad);
         if (!lastFrameButtons) {
           lastFrameButtons = new Array(gamepad.buttons.length);
@@ -283,32 +280,24 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           lastFrameButtonsByGamepad.set(gamepad, lastFrameButtons);
         }
 
-        // Toggle Play/Pause on primary button press
         if (buttonPressedThisFrame(gamepad, lastFrameButtons, 0)) {
-          if (video.paused) {
-            video.play();
-          } else {
-            video.pause();
+          let targetRayPose = frame.getPose(targetRaySpace, xrRefSpace);
+          if (targetRayPose) {
+            let hitResult = scene.hitTest(targetRayPose.transform);
+            if (hitResult) {
+              for (let button of buttons) {
+                if (hitResult.node == button.node) {
+                  button.action();
+                }
+              }
+            }
           }
         }
 
-        // hide projection layer
-        if (buttonPressedThisFrame(gamepad, lastFrameButtons, 1)) {
-          if (session.renderState.layers.length == 3) {
-            session.updateRenderState({ layers: [equirectlayerbackdrop, equirectlayer] });
-          } else {
-            session.updateRenderState({ layers: [equirectlayerbackdrop, equirectlayer, proj_layer] });
+        if (gamepad.buttons[1].pressed) {
+          if (pose) {
+            moveEqr(pose.transform.position, pose.transform.orientation);
           }
-        }
-
-        // Fast forward 15s on A button press
-        if (buttonPressedThisFrame(gamepad, lastFrameButtons, 4)) {
-          video.currentTime += 15;
-        }
-
-        // Rewind 15s on B button press
-        if (buttonPressedThisFrame(gamepad, lastFrameButtons, 5)) {
-          video.currentTime -= 15;
         }
 
         for (let i = 0; i < gamepad.buttons.length; i++) {
@@ -320,7 +309,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     // will set up the necessary session state and kick off the frame loop.
     function onSessionStarted(session) {
       xrSession = session;
-      xrButton.textContent = 'Exit VR';
 
       scene.inputRenderer.useProfileControllerMeshes(session);
 
@@ -347,16 +335,18 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       session.requestReferenceSpace('local').then((refSpace) => {
         xrRefSpace = refSpace;
 
-        proj_layer = xrGLFactory.createProjectionLayer( { space: refSpace, stencil: false });
+        proj_layer = xrGLFactory.createProjectionLayer({ space: refSpace, stencil: false });
 
         let sideBySide = video.src.includes("3840_180_3D");
 
-        equirectlayer = xrGLFactory.createEquirectLayer( {
+        equirectlayer = xrGLFactory.createEquirectLayer({
           space: refSpace,
           viewPixelWidth: sideBySide ? videoWidth / 2 : videoWidth,
           viewPixelHeight: sideBySide ? videoHeight : videoHeight / 2,
           layout: sideBySide ? "stereo-left-right" : "stereo-top-bottom"
         });
+
+        moveEqr({ x: 0, y: 0.2, z: 0 }, { w: 1, x: 0, y: 0, z: 0 });
 
         if (sideBySide) {
           equirectlayer.centralHorizontalAngle = Math.PI;
@@ -367,7 +357,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
         if (backdrop.checked) {
           backgroundTexture = loadTexture(gl, 'media/textures/mono_equirect_test.png', (w, h) => {
-            equirectlayerbackdrop = xrGLFactory.createEquirectLayer( {
+            equirectlayerbackdrop = xrGLFactory.createEquirectLayer({
               space: refSpace,
               viewPixelWidth: w,
               viewPixelHeight: h,
@@ -392,13 +382,19 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     // At this point the session object is no longer usable and should be
     // discarded.
     function onSessionEnded(event) {
+      if (event.session.isImmersive) {
+        xrButton.setSession(null);
+      }
       xrSession = null;
-      xrButton.textContent = 'Enter VR';
       video.pause();
 
       // In this simple case discard the WebGL context too, since we're not
       // rendering anything else to the screen with it.
       gl = null;
+    }
+
+    function onEndSession(session) {
+      session.end();
     }
 
     // Called every time the XRSession requests that a new frame be drawn.
@@ -484,13 +480,35 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           }
         }
 
+        let hits = [];
+
         // Check for and respond to any gamepad state changes.
         for (let source of session.inputSources) {
           if (source.gamepad) {
-            let pose = frame.getPose(source.gripSpace, xrRefSpace);
-            ProcessGamepad(source.gamepad, source.handedness, pose, session);
+            ProcessGamepad(source, frame, session);
+
+
+            let targetRayPose = frame.getPose(source.targetRaySpace, xrRefSpace);
+            if (!targetRayPose) {
+              continue;
+            }
+
+            let hitResult = scene.hitTest(targetRayPose.transform);
+            hits.push(hitResult);
+
           }
         }
+        for (let button of buttons) {
+            button.node.scale = [1, 1, 1];
+        }
+        for (let hitResult of hits) {
+          for (let button of buttons) {
+            if (hitResult && hitResult.node == button.node) {
+              button.node.scale = [1.2, 1.2, 1.2];
+            }
+          }
+        }
+
         scene.updateInputSources(frame, equirectlayer.space);
         scene.drawViewArray(views);
 

@@ -52,6 +52,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           30fps
         </option>
       </select>
+      <br />
       <input type="checkbox" id="update_every_frame">Update every frm</input>
       <br />
       <input type="checkbox" id="backdrop" checked>Show backdrop layer</input>
@@ -59,7 +60,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       <br />
       <input type="checkbox" id="lower_fps">60 fps</input>
       <br />
-      <button id="xr-button" disabled>XR not found</button>
       <p>Trigger = pause<br />
         Squeeze = show/hide controllers<br />
         A/X = forward 15 second<br />
@@ -148,7 +148,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     let backdrop = document.getElementById('backdrop');
     let low_fps = document.getElementById('lower_fps');
     // XR globals.
-    let xrButton = document.getElementById('xr-button');
+    let xrButton = null;
     let xrSession = null;
     let xrRefSpace = null;
     let xrGLFactory = null;
@@ -226,24 +226,24 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     // that is connected to the system and tests it to ensure it supports the
     // desired session options.
     function initXR() {
-      // Is WebXR available on this UA?
+      xrButton = new WebXRButton({
+        onRequestSession: onRequestSession,
+        onEndSession: onEndSession
+      });
+      document.querySelector('header').appendChild(xrButton.domElement);
+
       if (navigator.xr) {
         // If the device allows creation of exclusive sessions set it as the
         // target of the 'Enter XR' button.
         navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-          if (supported) {
-            // Updates the button to start an XR session when clicked.
-            xrButton.addEventListener('click', onButtonClicked);
-            xrButton.textContent = 'Enter XR';
-            xrButton.disabled = false;
-          }
+          xrButton.enabled = supported;
         });
       }
     }
 
     // Called when the user clicks the button to enter XR. If we don't have a
     // session we'll request one, and if we do have a session we'll end it.
-    function onButtonClicked() {
+    function onRequestSession() {
       if (!xrSession) {
         navigator.xr.requestSession('immersive-vr', { requiredFeatures: ['layers'], optionalFeatures: [low_fps.checked ? 'low-refresh-rate' : ''] }).then(onSessionStarted);
         video.play();
@@ -363,23 +363,23 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           height: layerHeight
         });
 
-       /* equirectlayer = xrGLFactory.createEquirectLayer({
-          space: refSpace,
-          viewPixelWidth: sideBySide ? videoWidth / 2 : videoWidth,
-          viewPixelHeight: sideBySide ? videoHeight : videoHeight / 2,
-          layout: sideBySide ? "stereo-left-right" : "stereo-top-bottom"
-        });
+        /* equirectlayer = xrGLFactory.createEquirectLayer({
+           space: refSpace,
+           viewPixelWidth: sideBySide ? videoWidth / 2 : videoWidth,
+           viewPixelHeight: sideBySide ? videoHeight : videoHeight / 2,
+           layout: sideBySide ? "stereo-left-right" : "stereo-top-bottom"
+         });
 
-        if (sideBySide) {
-          equirectlayer.centralHorizontalAngle = Math.PI;
-          equirectlayer.upperVerticalAngle = Math.PI / 2.0;
-          equirectlayer.lowerVerticalAngle = -Math.PI / 2.0;
-        }
-        equirectlayer.radius = document.getElementById("radius_txt").value;*/
+         if (sideBySide) {
+           equirectlayer.centralHorizontalAngle = Math.PI;
+           equirectlayer.upperVerticalAngle = Math.PI / 2.0;
+           equirectlayer.lowerVerticalAngle = -Math.PI / 2.0;
+         }
+         equirectlayer.radius = document.getElementById("radius_txt").value;*/
 
         if (backdrop.checked) {
           backgroundTexture = loadTexture(gl, 'media/textures/mono_equirect_test.png', (w, h) => {
-            equirectlayerbackdrop = xrGLFactory.createEquirectLayer( {
+            equirectlayerbackdrop = xrGLFactory.createEquirectLayer({
               space: refSpace,
               viewPixelWidth: w,
               viewPixelHeight: h,
@@ -404,13 +404,19 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     // At this point the session object is no longer usable and should be
     // discarded.
     function onSessionEnded(event) {
+      if (event.session.isImmersive) {
+        xrButton.setSession(null);
+      }
       xrSession = null;
-      xrButton.textContent = 'Enter VR';
       video.pause();
 
       // In this simple case discard the WebGL context too, since we're not
       // rendering anything else to the screen with it.
       gl = null;
+    }
+
+    function onEndSession(session) {
+      session.end();
     }
 
     var needsRedraw = true;
@@ -432,25 +438,25 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       // disappear.
       if (pose) {
         let arraylength = session.renderState.layers.length;
-/*
-        if (equirectlayerbackdrop && (!texture_copied || equirectlayerbackdrop.needsRedraw)) {
-          texture_copied = true;
-          let glayer = xrGLFactory.getSubImage(equirectlayerbackdrop, frame);
+        /*
+                if (equirectlayerbackdrop && (!texture_copied || equirectlayerbackdrop.needsRedraw)) {
+                  texture_copied = true;
+                  let glayer = xrGLFactory.getSubImage(equirectlayerbackdrop, frame);
 
-          const eqr_texture_width = equirectlayerbackdrop.viewPixelWidth;
-          const eqr_texture_height = equirectlayerbackdrop.viewPixelHeight;
+                  const eqr_texture_width = equirectlayerbackdrop.viewPixelWidth;
+                  const eqr_texture_height = equirectlayerbackdrop.viewPixelHeight;
 
-          let xrReadFramebuffer = gl.createFramebuffer();
-          gl.bindFramebuffer(gl.FRAMEBUFFER, xrReadFramebuffer);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, backgroundTexture, 0);
-          gl.bindTexture(gl.TEXTURE_2D, glayer.colorTexture);
+                  let xrReadFramebuffer = gl.createFramebuffer();
+                  gl.bindFramebuffer(gl.FRAMEBUFFER, xrReadFramebuffer);
+                  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, backgroundTexture, 0);
+                  gl.bindTexture(gl.TEXTURE_2D, glayer.colorTexture);
 
-          gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, eqr_texture_width, eqr_texture_height, 0);
+                  gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, eqr_texture_width, eqr_texture_height, 0);
 
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-          gl.deleteFramebuffer(xrReadFramebuffer);
-        }
-*/
+                  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                  gl.deleteFramebuffer(xrReadFramebuffer);
+                }
+        */
         if (updatevideo || update_every_frame.checked || equirectlayer.needsRedraw) {
           needsRedraw = false
           updatevideo = false;
@@ -515,17 +521,17 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     var vertexBuffer;
     var shaderProgram;
     var indexBuffer;
-    var indices = [3,2,1,3,1,0];
+    var indices = [3, 2, 1, 3, 1, 0];
 
-    function initQuad (gl) {
+    function initQuad(gl) {
       var fullscreen = false;
       var quadCorner = fullscreen ? 1.0 : 0.5;
 
       var vertices = [
-        -quadCorner,  quadCorner, 0.0,
+        -quadCorner, quadCorner, 0.0,
         -quadCorner, -quadCorner, 0.0,
-         quadCorner, -quadCorner, 0.0,
-         quadCorner,  quadCorner, 0.0
+        quadCorner, -quadCorner, 0.0,
+        quadCorner, quadCorner, 0.0
       ];
 
       // Create an empty buffer object to store vertex buffer
@@ -556,7 +562,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       var vertCode =
         'attribute vec3 coordinates;' +
         'void main(void) {' +
-            ' gl_Position = vec4(coordinates, 1.0);' +
+        ' gl_Position = vec4(coordinates, 1.0);' +
         '}';
 
       // Create a vertex shader object
@@ -571,7 +577,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       // Fragment shader source code
       var fragCode =
         'void main(void) {' +
-            ' gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);' +
+        ' gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);' +
         '}';
 
       // Create fragment shader object
